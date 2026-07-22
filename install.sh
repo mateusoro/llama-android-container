@@ -6,8 +6,6 @@
 # Usage: curl -fsSL https://raw.githubusercontent.com/mateusoro/llama-android-container/main/install.sh | bash
 # ==============================================================================
 
-set -e
-
 # Cores para Saída Terminal Estilizada
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -40,7 +38,7 @@ if [ -d "$INSTALL_DIR/.git" ]; then
   git -C "$INSTALL_DIR" pull --rebase || true
 else
   rm -rf "$INSTALL_DIR"
-  git clone "$REPO_URL" "$INSTALL_DIR"
+  git clone "$REPO_URL" "$INSTALL_DIR" || true
 fi
 
 # 3. Instalar e preparar o udocker
@@ -84,7 +82,7 @@ EXISTING_MODEL=$(find "$HOME/.cache/huggingface/hub" -name "*.gguf" 2>/dev/null 
 if [ -z "$EXISTING_MODEL" ]; then
   echo -e "\n${YELLOW}📥 Baixando pesos do modelo de IA do HuggingFace...${NC}"
   mkdir -p "$CACHE_DIR"
-  curl -L --progress-bar "$MODEL_URL" -o "$MODEL_PATH"
+  curl -L --progress-bar "$MODEL_URL" -o "$MODEL_PATH" || true
 else
   echo -e "\n${GREEN}✅ Pesos do modelo encontrados em cache!${NC}"
 fi
