@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# Master Startup Script: Pure CLI Dockerfile Container LLM Server
+# Master Startup Script: Dockerfile-driven Container LLM Server
 # Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 GPU
 # Usage: ./start.sh [path/to/Dockerfile]
 # Example: ./start.sh Dockerfile
@@ -10,7 +10,7 @@
 DOCKERFILE_PATH="${1:-Dockerfile}"
 
 echo "=================================================="
-echo "🐳 INICIANDO CONTAINER LLM VIA DOCKERFILE CLI ($DOCKERFILE_PATH)"
+echo "🐳 INICIANDO CONTAINER LLM VIA DOCKERFILE ($DOCKERFILE_PATH)"
 echo "=================================================="
 
 if [ ! -f "$DOCKERFILE_PATH" ]; then
@@ -31,37 +31,33 @@ chmod +x "$HOME/monitor_bottleneck.sh" 2>/dev/null || true
 nohup "$HOME/monitor_bottleneck.sh" </dev/null >/dev/null 2>&1 &
 echo "   • Monitor de gargalo rodando em background."
 
-# 3. CLI: Checar/Baixar modelo de pesos via CLI (curl / bash)
-echo "3️⃣ CLI: Verificando cache de pesos do modelo HuggingFace..."
-MODEL_URL="https://huggingface.co/InternScience/Agents-A1-4B-Q4_K_M-GGUF/resolve/main/Agents-A1-4B-Q4_K_M.gguf"
-CACHE_DIR="$HOME/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/snapshots/default"
-MODEL_PATH="$CACHE_DIR/Agents-A1-4B-Q4_K_M.gguf"
-
-# Buscar no cache local via CLI (find / ls)
-EXISTING_MODEL=$(find "$HOME/.cache/huggingface/hub" -name "*.gguf" 2>/dev/null | head -n 1)
-
-if [ -n "$EXISTING_MODEL" ] && [ -f "$EXISTING_MODEL" ]; then
-  MODEL_PATH="$EXISTING_MODEL"
-  echo "   • ✅ [CLI] Modelo encontrado em cache: $MODEL_PATH"
-else
-  echo "   • 📥 [CLI] Modelo nao encontrado em cache. Baixando via curl..."
-  mkdir -p "$CACHE_DIR"
-  curl -L --progress-bar "$MODEL_URL" -o "$MODEL_PATH"
-  echo "   • ✅ [CLI] Download concluido!"
-fi
-
-# 4. Ler especificações do Dockerfile
+# 3. Ler REPO_ID e BASE_IMAGE das especificações do Dockerfile
+REPO_ID=$(grep -i "^ENV REPO_ID=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
+REPO_ID="${REPO_ID:-InternScience/Agents-A1-4B-Q4_K_M-GGUF}"
 BASE_IMAGE=$(grep -i "^FROM" "$DOCKERFILE_PATH" 2>/dev/null | awk '{print $2}' | head -n 1)
 BASE_IMAGE="${BASE_IMAGE:-ubuntu:latest}"
 
-echo "4️⃣ Processando especificações do Dockerfile:"
+echo "3️⃣ Especificações do Dockerfile:"
 echo "   • Arquivo: $DOCKERFILE_PATH"
 echo "   • Imagem Base (FROM): $BASE_IMAGE"
-echo "   • Executando Container no ambiente proot-distro (ubuntu) com Adreno GPU..."
+echo "   • Repo ID (HuggingFace): $REPO_ID"
 
-# Converter o caminho do host para o caminho correspondente dentro do container
+# 4. Download / Checagem de Cache em uma única linha usando a CLI oficial `hf`
+echo "4️⃣ Checando/Baixando modelo no cache HuggingFace via CLI oficial..."
+HF_SNAPSHOT_PATH=$(hf download "$REPO_ID" --include "*.gguf" 2>/dev/null | grep -o 'path=.*' | cut -d'=' -f2)
+MODEL_PATH=$(find "${HF_SNAPSHOT_PATH:-$HOME/.cache/huggingface/hub}" -name "*.gguf" 2>/dev/null | head -n 1)
+
+if [ -z "$MODEL_PATH" ] || [ ! -f "$MODEL_PATH" ]; then
+  MODEL_PATH=$(find "$HOME/.cache/huggingface/hub" -name "*.gguf" 2>/dev/null | head -n 1)
+fi
+
+echo "   • Modelo Encontrado/Pronto: $MODEL_PATH"
+
+# Converter caminho do host Termux para caminho montado dentro do container
 CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
 
+# 5. Executar o Container no ambiente proot-distro (ubuntu) com Adreno GPU
+echo "5️⃣ Executando Container Ubuntu na GPU Adreno 830..."
 nohup proot-distro login ubuntu \
   --bind /vendor/lib64:/vendor/lib64 \
   --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
@@ -74,10 +70,10 @@ taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server -m '$CONTAINER_M
 " </dev/null > "$HOME/llama_container.log" 2>&1 &
 
 disown %1 2>/dev/null || true
-echo "   • Container LLM inicializado a partir do Dockerfile CLI."
+echo "   • Container LLM inicializado a partir do Dockerfile."
 
-# 5. Aguardar inicialização
-echo "5️⃣ Aguardando inicializacao da GPU no Container..."
+# 6. Aguardar inicialização
+echo "6️⃣ Aguardando inicializacao da GPU no Container..."
 READY=0
 for i in {1..35}; do
   STATUS=$(curl -s http://127.0.0.1:8085/health 2>/dev/null | grep '"status":"ok"')
@@ -95,8 +91,8 @@ else
   sleep 3
 fi
 
-# 6. Warmup via CLI curl
-echo "6️⃣ Esquentando os motores do Container via CLI..."
+# 7. Warmup via CLI curl
+echo "7️⃣ Esquentando os motores do Container..."
 curl -s -X POST http://127.0.0.1:8085/completion \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Diga um oi em 3 palavras", "n_predict": 10, "temperature": 0.7}' \
@@ -104,5 +100,5 @@ curl -s -X POST http://127.0.0.1:8085/completion \
 
 echo ""
 echo "=================================================="
-echo "🎉 DOCKERFILE CLI OPERACIONAL COM ACELERAÇÃO ADRENO GPU!"
+echo "🎉 DOCKERFILE OPERACIONAL COM ACELERAÇÃO ADRENO GPU!"
 echo "=================================================="
