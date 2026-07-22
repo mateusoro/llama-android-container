@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# llama-android-container: Installation Script (Dockerfile-driven Container)
+# llama-android-container: Installation Script (100% Container Mode)
 # Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 GPU on Termux
 # ==============================================================================
 
@@ -26,7 +26,7 @@ echo "3️⃣ Configurando driver OpenCL da Adreno GPU (/vendor/lib64/libOpenCL_
 mkdir -p /data/data/com.termux/files/usr/etc/OpenCL/vendors
 echo "/vendor/lib64/libOpenCL_adreno.so" > /data/data/com.termux/files/usr/etc/OpenCL/vendors/qualcomm.icd
 
-# 4. Baixar imagem base Linux ARM64 no udocker a partir da instrucao FROM do Dockerfile
+# 4. Baixar imagem base Linux ARM64 no udocker
 echo "4️⃣ Baixando imagem base Linux ARM64 no udocker..."
 udocker pull --platform=linux/arm64 ubuntu:latest || true
 udocker create --name=llm_dockerfile_container ubuntu:latest || true
@@ -38,13 +38,18 @@ proot-distro install ubuntu || true
 # 6. Copiar scripts para o diretório $HOME e dar permissão de execução
 echo "6️⃣ Copiando scripts para $HOME..."
 cp -f get_thermal.py "$HOME/" 2>/dev/null || true
+cp -f download_model.py "$HOME/" 2>/dev/null || true
 cp -f monitor_bottleneck.sh "$HOME/" 2>/dev/null || true
 cp -f start.sh "$HOME/" 2>/dev/null || true
 cp -f Dockerfile "$HOME/" 2>/dev/null || true
 
 chmod +x "$HOME/monitor_bottleneck.sh" "$HOME/start.sh"
 
+# 7. Checar/Baixar modelo de pesos do HuggingFace
+echo "7️⃣ Verificando cache de pesos do modelo HuggingFace..."
+python3 "$HOME/download_model.py" || true
+
 echo "=================================================="
 echo "✅ INSTALAÇÃO DO CONTAINER CONCLUÍDA COM SUCESSO!"
-echo "Para iniciar o servidor a partir do Dockerfile:  ./start.sh Dockerfile"
+echo "Para iniciar o servidor no Container:  ./start.sh Dockerfile"
 echo "=================================================="

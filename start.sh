@@ -31,32 +31,45 @@ chmod +x "$HOME/monitor_bottleneck.sh" 2>/dev/null || true
 nohup "$HOME/monitor_bottleneck.sh" </dev/null >/dev/null 2>&1 &
 echo "   • Monitor de gargalo rodando em background."
 
-# 3. Ler a imagem base (FROM) definida no Dockerfile
-BASE_IMAGE=$(grep -i "^FROM" "$DOCKERFILE_PATH" | awk '{print $2}' | head -n 1)
+# 3. Checar/Baixar modelo de pesos do HuggingFace (Reutiliza cache se ja existir!)
+echo "3️⃣ Verificando cache de pesos do modelo HuggingFace..."
+MODEL_PATH=$(python3 "$HOME/download_model.py" 2>/dev/null | tail -n 1)
+
+if [ -z "$MODEL_PATH" ] || [ ! -f "$MODEL_PATH" ]; then
+  echo "⚠️ Tentando encontrar modelo no cache padrao..."
+  MODEL_PATH="$HOME/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/snapshots/d92b02e27074b27542384f72bc0e72203c970f0f/Agents-A1-4B-Q4_K_M.gguf"
+fi
+
+echo "   • Modelo de Pesos Ativo: $MODEL_PATH"
+
+# 4. Ler especificações do Dockerfile
+BASE_IMAGE=$(grep -i "^FROM" "$DOCKERFILE_PATH" 2>/dev/null | awk '{print $2}' | head -n 1)
 BASE_IMAGE="${BASE_IMAGE:-ubuntu:latest}"
 
-echo "3️⃣ Processando especificações do Dockerfile:"
+echo "4️⃣ Processando especificações do Dockerfile:"
 echo "   • Arquivo: $DOCKERFILE_PATH"
 echo "   • Imagem Base (FROM): $BASE_IMAGE"
 echo "   • Executando Container no ambiente proot-distro (ubuntu) com Adreno GPU..."
+
+# Converter o caminho do host para o caminho correspondente dentro do container
+CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
 
 nohup proot-distro login ubuntu \
   --bind /vendor/lib64:/vendor/lib64 \
   --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
   --bind /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
   --bind /data/data/com.termux/files/home:/root/home \
-  -- bash -c '
-export LD_LIBRARY_PATH=/vendor/lib64:$LD_LIBRARY_PATH
-export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:$PATH
-MODEL_PATH="/root/home/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/blobs/d93c393a9bd5139a4b5cfe24d31ef553c5a497bfb8afec178a354ecbf508f062"
-taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server -m "$MODEL_PATH" -ngl 99 -c 32768 -np 1 --no-mmap -b 512 -ub 128 -t 3 -fa on --host 0.0.0.0 --port 8085
-' </dev/null > "$HOME/llama_container.log" 2>&1 &
+  -- bash -c "
+export LD_LIBRARY_PATH=/vendor/lib64:\$LD_LIBRARY_PATH
+export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:\$PATH
+taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server -m '$CONTAINER_MODEL_PATH' -ngl 99 -c 32768 -np 1 --no-mmap -b 512 -ub 128 -t 3 -fa on --host 0.0.0.0 --port 8085
+" </dev/null > "$HOME/llama_container.log" 2>&1 &
 
 disown %1 2>/dev/null || true
 echo "   • Container LLM inicializado a partir do Dockerfile."
 
-# 4. Aguardar inicialização
-echo "4️⃣ Aguardando inicializacao da GPU no Container..."
+# 5. Aguardar inicialização
+echo "5️⃣ Aguardando inicializacao da GPU no Container..."
 READY=0
 for i in {1..35}; do
   STATUS=$(curl -s http://127.0.0.1:8085/health 2>/dev/null | grep '"status":"ok"')
@@ -74,8 +87,8 @@ else
   sleep 3
 fi
 
-# 5. Warmup
-echo "5️⃣ Esquentando os motores do Container..."
+# 6. Warmup
+echo "6️⃣ Esquentando os motores do Container..."
 python3 -c '
 import urllib.request, json
 url = "http://127.0.0.1:8085/completion"
