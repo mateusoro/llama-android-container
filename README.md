@@ -5,6 +5,22 @@
 
 ---
 
+## ⚡ 1-Line Installation (Modern One-Liner)
+
+Install everything automatically on Termux with a single command (no repository cloning required):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mateusoro/llama-android-container/main/install.sh | bash
+```
+
+After installation completes, start the server anywhere by typing:
+
+```bash
+llama-container
+```
+
+---
+
 ## ⚡ Overview & Key Discoveries
 
 Running local Large Language Models (LLMs) on mobile hardware often suffers from **thermal throttling**, **UI stutter/freezing during prompt prefill**, and **VRAM sync deadlocks**. 
@@ -13,7 +29,7 @@ This repository provides a **Dockerfile-driven containerized environment** (`udo
 
 ```mermaid
 graph TD
-    A["Dockerfile (Specification)"] --> B["start.sh Entrypoint Parser"]
+    A["Dockerfile Specification"] --> B["start.sh / llama-container Entrypoint"]
     B --> C["udocker / proot-distro Container Engine"]
     C --> D["llama-server Engine (Inside Container)"]
     D -->|"/vendor/lib64/libOpenCL_adreno.so"| E["Adreno 830 GPU (100% Offload)"]
@@ -31,6 +47,23 @@ The container is fully specified via standard `Dockerfile` syntax:
 FROM ubuntu:latest
 
 ENV LD_LIBRARY_PATH=/vendor/lib64
+ENV REPO_ID=InternScience/Agents-A1-4B-Q4_K_M-GGUF
+ENV MODEL_FILENAME=Agents-A1-4B-Q4_K_M.gguf
+
+# HuggingFace Cache Directory (Shared with Host ~/.cache/huggingface)
+ENV HF_HOME=/root/home/.cache/huggingface
+ENV MODEL_PATH=/root/home/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/snapshots/default/Agents-A1-4B-Q4_K_M.gguf
+
+# Pure CLI Model Cache Checker & Downloader (curl / bash CLI)
+RUN mkdir -p $MODEL_CACHE_DIR && \
+    if [ ! -f "$MODEL_PATH" ]; then \
+        echo "📥 [CLI] Downloading model from HuggingFace via curl..." && \
+        curl -L --progress-bar "$MODEL_URL" -o "$MODEL_PATH"; \
+    else \
+        echo "✅ [CLI] Model found in cache! Skipped download."; \
+    fi
+
+# Optimized LLM Inference Parameters
 ENV THREADS=3
 ENV UBATCH=128
 ENV BATCH=512
@@ -38,6 +71,7 @@ ENV CONTEXT=32768
 ENV GPU_LAYERS=99
 ENV FLASH_ATTN=on
 ENV PORT=8085
+ENV HOST=0.0.0.0
 ```
 
 ---
@@ -54,32 +88,16 @@ ENV PORT=8085
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start & Usage
 
-### 1. Installation
-
-Clone this repository and run the automated installer:
-
+### Start Server via Global Command
 ```bash
-git clone https://github.com/mateusoro/llama-android-container.git
-cd llama-android-container
-chmod +x install.sh
-./install.sh
+llama-container
 ```
 
----
-
-### 2. Running via Dockerfile Parameter
-
-Pass any `Dockerfile` to the startup script:
-
+### Start Server via Custom Dockerfile
 ```bash
-./start.sh Dockerfile
-```
-
-Or pass a custom Dockerfile path:
-```bash
-./start.sh my_custom.Dockerfile
+./start.sh custom.Dockerfile
 ```
 
 The startup script automatically:
