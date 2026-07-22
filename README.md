@@ -90,22 +90,27 @@ ENV HOST=0.0.0.0
 
 ## 🚀 Quick Start & Usage
 
-### Start Server via Global Command
+### 1. Start Server via Default Dockerfile
 ```bash
 llama-container
 ```
 
-### Start Server via Custom Dockerfile
+### 2. Start Server via Custom Dockerfile
 ```bash
-./start.sh custom.Dockerfile
+llama-container meu_modelo.Dockerfile
+```
+or
+```bash
+./start.sh /caminho/para/meu_modelo.Dockerfile
 ```
 
 The startup script automatically:
 1. Parses the base image (`FROM`) and parameters from the target `Dockerfile`
-2. Terminates old server instances to prevent OOM memory kills
-3. Launches real-time 15s thermal logger (`~/bottleneck.log`)
-4. Executes `llama-server` **inside the GPU-accelerated container** on port `8085`
-5. Performs an automatic health check and warmup request
+2. Checks/downloads model weights from HuggingFace via pure CLI (reusing local cache if present)
+3. Terminates old server instances to prevent OOM memory kills
+4. Launches real-time 15s thermal logger (`~/bottleneck.log`)
+5. Executes `llama-server` **inside the GPU-accelerated container** on port `8085`
+6. Performs an automatic health check and warmup request
 
 ---
 
