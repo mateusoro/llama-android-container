@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# Master Startup Script: Dockerfile-driven Container LLM Server
+# Master Startup Script: Pure CLI Dockerfile Container LLM Server
 # Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 GPU
 # Usage: ./start.sh [path/to/Dockerfile]
 # Example: ./start.sh Dockerfile
@@ -10,7 +10,7 @@
 DOCKERFILE_PATH="${1:-Dockerfile}"
 
 echo "=================================================="
-echo "🐳 INICIANDO CONTAINER LLM VIA DOCKERFILE ($DOCKERFILE_PATH)"
+echo "🐳 INICIANDO CONTAINER LLM VIA DOCKERFILE CLI ($DOCKERFILE_PATH)"
 echo "=================================================="
 
 if [ ! -f "$DOCKERFILE_PATH" ]; then
@@ -31,16 +31,24 @@ chmod +x "$HOME/monitor_bottleneck.sh" 2>/dev/null || true
 nohup "$HOME/monitor_bottleneck.sh" </dev/null >/dev/null 2>&1 &
 echo "   • Monitor de gargalo rodando em background."
 
-# 3. Checar/Baixar modelo de pesos do HuggingFace (Reutiliza cache se ja existir!)
-echo "3️⃣ Verificando cache de pesos do modelo HuggingFace..."
-MODEL_PATH=$(python3 "$HOME/download_model.py" 2>/dev/null | tail -n 1)
+# 3. CLI: Checar/Baixar modelo de pesos via CLI (curl / bash)
+echo "3️⃣ CLI: Verificando cache de pesos do modelo HuggingFace..."
+MODEL_URL="https://huggingface.co/InternScience/Agents-A1-4B-Q4_K_M-GGUF/resolve/main/Agents-A1-4B-Q4_K_M.gguf"
+CACHE_DIR="$HOME/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/snapshots/default"
+MODEL_PATH="$CACHE_DIR/Agents-A1-4B-Q4_K_M.gguf"
 
-if [ -z "$MODEL_PATH" ] || [ ! -f "$MODEL_PATH" ]; then
-  echo "⚠️ Tentando encontrar modelo no cache padrao..."
-  MODEL_PATH="$HOME/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/snapshots/d92b02e27074b27542384f72bc0e72203c970f0f/Agents-A1-4B-Q4_K_M.gguf"
+# Buscar no cache local via CLI (find / ls)
+EXISTING_MODEL=$(find "$HOME/.cache/huggingface/hub" -name "*.gguf" 2>/dev/null | head -n 1)
+
+if [ -n "$EXISTING_MODEL" ] && [ -f "$EXISTING_MODEL" ]; then
+  MODEL_PATH="$EXISTING_MODEL"
+  echo "   • ✅ [CLI] Modelo encontrado em cache: $MODEL_PATH"
+else
+  echo "   • 📥 [CLI] Modelo nao encontrado em cache. Baixando via curl..."
+  mkdir -p "$CACHE_DIR"
+  curl -L --progress-bar "$MODEL_URL" -o "$MODEL_PATH"
+  echo "   • ✅ [CLI] Download concluido!"
 fi
-
-echo "   • Modelo de Pesos Ativo: $MODEL_PATH"
 
 # 4. Ler especificações do Dockerfile
 BASE_IMAGE=$(grep -i "^FROM" "$DOCKERFILE_PATH" 2>/dev/null | awk '{print $2}' | head -n 1)
@@ -66,7 +74,7 @@ taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server -m '$CONTAINER_M
 " </dev/null > "$HOME/llama_container.log" 2>&1 &
 
 disown %1 2>/dev/null || true
-echo "   • Container LLM inicializado a partir do Dockerfile."
+echo "   • Container LLM inicializado a partir do Dockerfile CLI."
 
 # 5. Aguardar inicialização
 echo "5️⃣ Aguardando inicializacao da GPU no Container..."
@@ -87,21 +95,14 @@ else
   sleep 3
 fi
 
-# 6. Warmup
-echo "6️⃣ Esquentando os motores do Container..."
-python3 -c '
-import urllib.request, json
-url = "http://127.0.0.1:8085/completion"
-payload = {"prompt": "Diga um oi em 3 palavras", "n_predict": 10, "temperature": 0.7}
-req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-try:
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        print("   • Resposta do Container:", res.get("content", "").strip())
-except Exception as e:
-    print("   • Aviso no aquecimento:", e)
-'
+# 6. Warmup via CLI curl
+echo "6️⃣ Esquentando os motores do Container via CLI..."
+curl -s -X POST http://127.0.0.1:8085/completion \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Diga um oi em 3 palavras", "n_predict": 10, "temperature": 0.7}' \
+  | grep -o '"content":"[^"]*"' | head -n 1 || true
 
+echo ""
 echo "=================================================="
-echo "🎉 DOCKERFILE OPERACIONAL COM ACELERAÇÃO ADRENO GPU!"
+echo "🎉 DOCKERFILE CLI OPERACIONAL COM ACELERAÇÃO ADRENO GPU!"
 echo "=================================================="

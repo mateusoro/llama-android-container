@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# llama-android-container: Installation Script (100% Container Mode)
+# llama-android-container: Installation Script (Pure CLI Dockerfile Container)
 # Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 GPU on Termux
 # ==============================================================================
 
@@ -12,7 +12,7 @@ echo "🚀 INSTALANDO DEPENDÊNCIAS DO LLAMA-ANDROID-CONTAINER"
 echo "=================================================="
 
 # 1. Atualizar repositórios e instalar pacotes base do Termux
-echo "1️⃣ Instalando pacotes base e ferramentas Container..."
+echo "1️⃣ Instalando pacotes base e ferramentas CLI Container..."
 pkg update -y || true
 pkg install -y python git curl clinfo proot proot-distro fd ripgrep || true
 
@@ -36,20 +36,15 @@ echo "5️⃣ Garantindo ambiente proot-distro Ubuntu..."
 proot-distro install ubuntu || true
 
 # 6. Copiar scripts para o diretório $HOME e dar permissão de execução
-echo "6️⃣ Copiando scripts para $HOME..."
+echo "6️⃣ Copiando scripts CLI para $HOME..."
 cp -f get_thermal.py "$HOME/" 2>/dev/null || true
-cp -f download_model.py "$HOME/" 2>/dev/null || true
 cp -f monitor_bottleneck.sh "$HOME/" 2>/dev/null || true
 cp -f start.sh "$HOME/" 2>/dev/null || true
 cp -f Dockerfile "$HOME/" 2>/dev/null || true
 
 chmod +x "$HOME/monitor_bottleneck.sh" "$HOME/start.sh"
 
-# 7. Checar/Baixar modelo de pesos do HuggingFace
-echo "7️⃣ Verificando cache de pesos do modelo HuggingFace..."
-python3 "$HOME/download_model.py" || true
-
 echo "=================================================="
-echo "✅ INSTALAÇÃO DO CONTAINER CONCLUÍDA COM SUCESSO!"
-echo "Para iniciar o servidor no Container:  ./start.sh Dockerfile"
+echo "✅ INSTALAÇÃO DO CONTAINER CLI CONCLUÍDA COM SUCESSO!"
+echo "Para iniciar o servidor via Dockerfile CLI:  ./start.sh Dockerfile"
 echo "=================================================="
