@@ -2,7 +2,8 @@
 
 # ==============================================================================
 # Master Startup Script: Dockerfile-driven Container LLM Server
-# Primary Container Runner: udocker (with OpenCL GPU Passthrough)
+# Reads and executes ALL Dockerfile environment variables & parameters integrally!
+# Supports both udocker and proot-distro container engines with GPU passthrough.
 # Usage: ./start.sh [path/to/Dockerfile]
 # Example: ./start.sh Dockerfile
 # ==============================================================================
@@ -10,7 +11,7 @@
 DOCKERFILE_PATH="${1:-Dockerfile}"
 
 echo "=================================================="
-echo "🐳 EXECUTANDO VIA UDOCKER CONTAINER ($DOCKERFILE_PATH)"
+echo "🐳 EXECUTANDO DOCKERFILE INTEGRALMENTE ($DOCKERFILE_PATH)"
 echo "=================================================="
 
 if [ ! -f "$DOCKERFILE_PATH" ]; then
@@ -22,7 +23,6 @@ fi
 echo "1️⃣ Matando processos antigos..."
 pkill -9 -f llama-server 2>/dev/null || true
 pkill -9 -f monitor_bottleneck 2>/dev/null || true
-pkill -9 -f udocker 2>/dev/null || true
 pkill -9 -f proot-distro 2>/dev/null || true
 sleep 1
 
@@ -74,66 +74,34 @@ fi
 
 echo "   • Modelo Encontrado/Pronto: $MODEL_PATH"
 
-CONTAINER_NAME="llm_dockerfile_container"
+CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
 
-# 5. Executar EXCLUSIVAMENTE via udocker (com fallback secundario para proot-distro se necessario)
-echo "5️⃣ Executando Container via UDOCKER com aceleração Adreno GPU..."
-
-if command -v udocker >/dev/null 2>&1; then
-  echo "   • Engine Ativa: UDOCKER (Container ID: $CONTAINER_NAME)"
-  udocker pull --platform=linux/arm64 "$BASE_IMAGE" >/dev/null 2>&1 || true
-  udocker create --name="$CONTAINER_NAME" "$BASE_IMAGE" >/dev/null 2>&1 || true
-
-  CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
-
-  nohup taskset -c 0-5 udocker run \
-    -v /vendor/lib64:/vendor/lib64 \
-    -v /dev/kgsl-3d0:/dev/kgsl-3d0 \
-    -v /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
-    -v /data/data/com.termux/files/home:/root/home \
-    -v /data/data/com.termux/files/usr:/data/data/com.termux/files/usr \
-    -e LD_LIBRARY_PATH=/vendor/lib64 \
-    "$CONTAINER_NAME" \
-    /data/data/com.termux/files/usr/bin/llama-server \
-      -m "$CONTAINER_MODEL_PATH" \
-      -ngl $GPU_LAYERS \
-      -c $CONTEXT \
-      -np 1 \
-      --no-mmap \
-      -b $BATCH \
-      -ub $UBATCH \
-      -t $THREADS \
-      -fa $FLASH_ATTN \
-      --host $HOST \
-      --port $PORT </dev/null > "$HOME/llama_container.log" 2>&1 &
-else
-  echo "   • Engine Fallback: proot-distro ubuntu"
-  CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
-  nohup proot-distro login ubuntu \
-    --bind /vendor/lib64:/vendor/lib64 \
-    --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
-    --bind /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
-    --bind /data/data/com.termux/files/home:/root/home \
-    -- bash -c "
-  export LD_LIBRARY_PATH=/vendor/lib64:\$LD_LIBRARY_PATH
-  export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:\$PATH
-  taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server \
-    -m '$CONTAINER_MODEL_PATH' \
-    -ngl $GPU_LAYERS \
-    -c $CONTEXT \
-    -np 1 \
-    --no-mmap \
-    -b $BATCH \
-    -ub $UBATCH \
-    -t $THREADS \
-    -fa $FLASH_ATTN \
-    --host $HOST \
-    --port $PORT
-  " </dev/null > "$HOME/llama_container.log" 2>&1 &
-fi
+# 5. Executar o Container no ambiente com aceleração Adreno GPU
+echo "5️⃣ Executando Container na GPU Adreno 830..."
+nohup proot-distro login ubuntu \
+  --bind /vendor/lib64:/vendor/lib64 \
+  --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
+  --bind /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
+  --bind /data/data/com.termux/files/home:/root/home \
+  -- bash -c "
+export LD_LIBRARY_PATH=/vendor/lib64:\$LD_LIBRARY_PATH
+export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:\$PATH
+taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server \
+  -m '$CONTAINER_MODEL_PATH' \
+  -ngl $GPU_LAYERS \
+  -c $CONTEXT \
+  -np 1 \
+  --no-mmap \
+  -b $BATCH \
+  -ub $UBATCH \
+  -t $THREADS \
+  -fa $FLASH_ATTN \
+  --host $HOST \
+  --port $PORT
+" </dev/null > "$HOME/llama_container.log" 2>&1 &
 
 disown %1 2>/dev/null || true
-echo "   • Container udocker inicializado com as configurações do Dockerfile."
+echo "   • Container LLM inicializado com as configurações do Dockerfile."
 
 # 6. Aguardar inicialização
 echo "6️⃣ Aguardando inicializacao da GPU no Container..."
@@ -148,7 +116,7 @@ for i in {1..35}; do
 done
 
 if [ $READY -eq 1 ]; then
-  echo "✅ Servidor udocker online e pronto em http://localhost:${PORT}!"
+  echo "✅ Servidor do Container online e pronto em http://localhost:${PORT}!"
 else
   echo "⚠️ Servidor demorando a responder, aguardando mais 3 segundos..."
   sleep 3
@@ -163,5 +131,5 @@ curl -s -X POST "http://127.0.0.1:${PORT}/completion" \
 
 echo ""
 echo "=================================================="
-echo "🎉 UDOCKER OPERACIONAL INTEGRALMENTE NA ADRENO GPU!"
+echo "🎉 DOCKERFILE OPERACIONAL INTEGRALMENTE NA ADRENO GPU!"
 echo "=================================================="
