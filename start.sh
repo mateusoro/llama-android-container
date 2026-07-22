@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# llama-android-container: Master Dockerfile Startup Script
-# Executes Dockerfile specifications in Rootless Container Environment with GPU Passthrough
+# Master Startup Script: Dockerfile-driven Container LLM Server
+# Container Engine: udocker run (Direct udocker CLI execution with GPU Passthrough)
 # Usage: ./start.sh [path/to/Dockerfile]
 # Example: ./start.sh Dockerfile
 # ==============================================================================
@@ -10,7 +10,7 @@
 DOCKERFILE_PATH="${1:-Dockerfile}"
 
 echo "=================================================="
-echo "🐳 EXECUTANDO CONTAINER VIA DOCKERFILE ($DOCKERFILE_PATH)"
+echo "🐳 EXECUTANDO VIA UDOCKER RUN ($DOCKERFILE_PATH)"
 echo "=================================================="
 
 if [ ! -f "$DOCKERFILE_PATH" ]; then
@@ -22,7 +22,7 @@ fi
 echo "1️⃣ Matando processos antigos..."
 pkill -9 -f llama-server 2>/dev/null || true
 pkill -9 -f monitor_bottleneck 2>/dev/null || true
-pkill -9 -f proot-distro 2>/dev/null || true
+pkill -9 -f udocker 2>/dev/null || true
 sleep 1
 
 # 2. Iniciar script de monitoramento térmico
@@ -73,37 +73,40 @@ fi
 
 echo "   • Modelo Encontrado/Pronto: $MODEL_PATH"
 
+CONTAINER_NAME="llm_dockerfile_container"
 CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
 
-# 5. Executar o Container com passthrough de GPU Adreno 830 e freio térmico (taskset -c 0-5)
-echo "5️⃣ Executando Container na GPU Adreno 830 (udocker / container engine)..."
-nohup proot-distro login ubuntu \
-  --bind /vendor/lib64:/vendor/lib64 \
-  --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
-  --bind /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
-  --bind /data/data/com.termux/files/home:/root/home \
-  -- bash -c "
-export LD_LIBRARY_PATH=/vendor/lib64:\$LD_LIBRARY_PATH
-export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:\$PATH
-taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server \
-  -m '$CONTAINER_MODEL_PATH' \
-  -ngl $GPU_LAYERS \
-  -c $CONTEXT \
-  -np 1 \
-  --no-mmap \
-  -b $BATCH \
-  -ub $UBATCH \
-  -t $THREADS \
-  -fa $FLASH_ATTN \
-  --host $HOST \
-  --port $PORT
-" </dev/null > "$HOME/llama_container.log" 2>&1 &
+# Garantir criação do container no udocker
+udocker pull --platform=linux/arm64 "$BASE_IMAGE" >/dev/null 2>&1 || true
+udocker create --name="$CONTAINER_NAME" "$BASE_IMAGE" >/dev/null 2>&1 || true
+
+# 5. Executar EXCLUSIVAMENTE o comando udocker run
+echo "5️⃣ Executando EXCLUSIVAMENTE o comando 'udocker run' na GPU Adreno 830..."
+nohup taskset -c 0-5 udocker run \
+  -v /vendor/lib64:/vendor/lib64 \
+  -v /dev/kgsl-3d0:/dev/kgsl-3d0 \
+  -v /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
+  -v /data/data/com.termux/files/home:/root/home \
+  -e LD_LIBRARY_PATH=/vendor/lib64 \
+  "$CONTAINER_NAME" \
+  /data/data/com.termux/files/usr/bin/llama-server \
+    -m "$CONTAINER_MODEL_PATH" \
+    -ngl $GPU_LAYERS \
+    -c $CONTEXT \
+    -np 1 \
+    --no-mmap \
+    -b $BATCH \
+    -ub $UBATCH \
+    -t $THREADS \
+    -fa $FLASH_ATTN \
+    --host $HOST \
+    --port $PORT </dev/null > "$HOME/llama_container.log" 2>&1 &
 
 disown %1 2>/dev/null || true
-echo "   • Container LLM inicializado com as configurações do Dockerfile."
+echo "   • Comando 'udocker run' disparado com sucesso."
 
 # 6. Aguardar inicialização
-echo "6️⃣ Aguardando inicializacao da GPU no Container..."
+echo "6️⃣ Aguardando inicializacao da GPU no Container udocker..."
 READY=0
 for i in {1..35}; do
   STATUS=$(curl -s "http://127.0.0.1:${PORT}/health" 2>/dev/null | grep '"status":"ok"')
@@ -115,14 +118,14 @@ for i in {1..35}; do
 done
 
 if [ $READY -eq 1 ]; then
-  echo "✅ Servidor do Container online e pronto em http://localhost:${PORT}!"
+  echo "✅ Servidor udocker online e pronto em http://localhost:${PORT}!"
 else
   echo "⚠️ Servidor demorando a responder, aguardando mais 3 segundos..."
   sleep 3
 fi
 
 # 7. Warmup via CLI curl
-echo "7️⃣ Esquentando os motores do Container..."
+echo "7️⃣ Esquentando os motores do Container udocker..."
 curl -s -X POST "http://127.0.0.1:${PORT}/completion" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Diga um oi em 3 palavras", "n_predict": 10, "temperature": 0.7}' \
@@ -130,5 +133,5 @@ curl -s -X POST "http://127.0.0.1:${PORT}/completion" \
 
 echo ""
 echo "=================================================="
-echo "🎉 DOCKERFILE OPERACIONAL INTEGRALMENTE NA ADRENO GPU!"
+echo "🎉 CONTAINER UDOCKER OPERACIONAL INTEGRALMENTE NA ADRENO GPU!"
 echo "=================================================="
