@@ -9,12 +9,12 @@
 
 Running local Large Language Models (LLMs) on mobile hardware often suffers from **thermal throttling**, **UI stutter/freezing during prompt prefill**, and **VRAM sync deadlocks**. 
 
-This repository provides an end-to-end containerized setup (`udocker` / `proot-distro`) that solves these mobile bottlenecks, achieving **14.37 to 16.22 tokens/second** generation speed while dropping CPU Prime core temperatures by **~35 °C**.
+This repository provides a **100% containerized environment** (`udocker` / `proot-distro`) that solves these mobile bottlenecks, achieving **14.37 to 16.22 tokens/second** generation speed while dropping CPU Prime core temperatures by **~35 °C**.
 
 ```mermaid
 graph TD
-    A["Android OS / Termux Host"] --> B["udocker / proot-distro Container"]
-    B --> C["llama-server Engine"]
+    A["Android OS / Termux Host"] --> B["udocker / proot-distro Container Environment"]
+    B --> C["llama-server Engine (Inside Container)"]
     C -->|"/vendor/lib64/libOpenCL_adreno.so"| D["Adreno 830 GPU (100% Offload)"]
     C -->|"taskset -c 0-5"| E["Oryon Performance Cores (0-5)"]
     F["Android System UI"] -->|Unblocked| G["Oryon Prime Cores (6-7)"]
@@ -24,13 +24,13 @@ graph TD
 
 ## 📊 Benchmark Summary
 
-| Metric | Stock / Default Settings | Optimized `llama-android-container` |
+| Metric | Stock / Default Settings | Container Mode (`llama-android-container`) |
 | :--- | :--- | :--- |
 | **CPU Temperature** | **102.3 °C** 🛑 (Thermal Throttling) | **58.3 °C – 67.5 °C** 🧊 (**-34.8 °C Drop!**) |
 | **Generation Speed** | ~11.5 tokens/s | **14.37 – 16.22 tokens/s** 🏆 (Peak Performance) |
 | **Prefill UI Lag** | Severe UI Freezing | **Smooth & Fluid** (`-ub 128` Micro-batching) |
 | **GPU Acceleration** | 100% Adreno 830 Offload | **100% OpenCL Passthrough via Container** |
-| **RAM Usage** | ~3.2 GB | ~550 MB – 1.2 GB |
+| **Execution Environment** | Unprotected / Native | **100% Isolated Container (`udocker` / `proot-distro`)** |
 
 ---
 
@@ -63,30 +63,26 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The installer automatically:
-- Installs `python`, `clinfo`, `proot-distro`, and `udocker`
-- Configures Qualcomm OpenCL vendor ICD (`/data/data/com.termux/files/usr/etc/OpenCL/vendors/qualcomm.icd`)
-- Prepares base ARM64 Linux container environments
-
 ---
 
-### 2. Running the Server
+### 2. Running the Container Server
 
-#### Option A: Native Termux Mode
+Start the containerized server directly:
+
 ```bash
 ./start.sh
 ```
 
-#### Option B: Container Mode (`udocker` / `proot-distro`)
+Or specify a custom container image name:
 ```bash
-./start_udocker.sh llm_agent
+./start.sh llm_agent
 ```
 
-Both startup scripts:
-1. Terminate old server instances to prevent OOM memory kills
-2. Launch real-time 15s thermal logger (`~/bottleneck.log`)
-3. Execute `llama-server` on port `8085` with GPU OpenCL passthrough
-4. Perform an automatic health check and warmup request
+The startup script automatically:
+1. Terminates old server instances to prevent OOM memory kills
+2. Launches real-time 15s thermal logger (`~/bottleneck.log`)
+3. Executes `llama-server` **exclusively inside the container** on port `8085` with GPU OpenCL passthrough
+4. Performs an automatic health check and warmup request
 
 ---
 
@@ -96,24 +92,6 @@ Monitor temperatures, CPU load, and RAM usage live:
 
 ```bash
 tail -f ~/bottleneck.log
-```
-
-Example Log Output:
-```text
-==================================================
-⏱️ TIMESTAMP: 2026-07-22 08:55:05
---------------------------------------------------
-🌡️ TEMPERATURAS DO SNAPDRAGON 8 ELITE / REDMAGIC:
-  • CPU Prime Core 0 (cpu-1-0-1) : 56.7 °C
-  • CPU Prime Core 1 (cpu-1-1-1) : 61.4 °C
-  • CPU Perf Cores (cpuss-1-1)   : 57.1 °C
-  • GPU Adreno 830 (gpuss-4)     : 56.0 °C
-  • Bateria (battery)             : 48.0 °C
---------------------------------------------------
-🧠 MEMÓRIA (RAM / ZRAM):
-               total        used        free
-Mem:           11161        5057        1224
-==================================================
 ```
 
 ---

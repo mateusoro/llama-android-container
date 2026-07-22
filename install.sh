@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# llama-android-container: Installation Script
+# llama-android-container: Installation Script (100% Container Mode)
 # Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 GPU on Termux
 # ==============================================================================
 
@@ -12,7 +12,7 @@ echo "🚀 INSTALANDO DEPENDÊNCIAS DO LLAMA-ANDROID-CONTAINER"
 echo "=================================================="
 
 # 1. Atualizar repositórios e instalar pacotes base do Termux
-echo "1️⃣ Instalando pacotes base e ferramentas OpenCL/Container..."
+echo "1️⃣ Instalando pacotes base e ferramentas Container..."
 pkg update -y || true
 pkg install -y python git curl clinfo proot proot-distro fd ripgrep || true
 
@@ -36,16 +36,14 @@ echo "5️⃣ Garantindo ambiente proot-distro Ubuntu..."
 proot-distro install ubuntu || true
 
 # 6. Copiar scripts para o diretório $HOME e dar permissão de execução
-echo "6️⃣ Copiando scripts de controle para $HOME..."
+echo "6️⃣ Copiando scripts do Container para $HOME..."
 cp -f get_thermal.py "$HOME/" 2>/dev/null || true
 cp -f monitor_bottleneck.sh "$HOME/" 2>/dev/null || true
 cp -f start.sh "$HOME/" 2>/dev/null || true
-cp -f start_udocker.sh "$HOME/" 2>/dev/null || true
 
-chmod +x "$HOME/monitor_bottleneck.sh" "$HOME/start.sh" "$HOME/start_udocker.sh"
+chmod +x "$HOME/monitor_bottleneck.sh" "$HOME/start.sh"
 
 echo "=================================================="
-echo "✅ INSTALAÇÃO CONCLUÍDA COM SUCESSO!"
-echo "Para iniciar o servidor nativo:  ./start.sh"
-echo "Para iniciar via udocker:        ./start_udocker.sh llm_agent"
+echo "✅ INSTALAÇÃO DO CONTAINER CONCLUÍDA COM SUCESSO!"
+echo "Para iniciar o servidor no Container:  ./start.sh"
 echo "=================================================="
