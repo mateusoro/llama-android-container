@@ -1,15 +1,23 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# Master Startup Script: Containerized OpenCL GPU LLM Server
-# Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 (100% Container Mode)
+# Master Startup Script: Dockerfile-driven Container LLM Server
+# Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 GPU
+# Usage: ./start.sh [path/to/Dockerfile]
+# Example: ./start.sh Dockerfile
 # ==============================================================================
 
-CONTAINER_NAME="${1:-llm_agent}"
+DOCKERFILE_PATH="${1:-Dockerfile}"
 
 echo "=================================================="
-echo "🐳 INICIANDO SERVIDOR LLM NO CONTAINER ($CONTAINER_NAME + ADRENO 830 GPU)"
+echo "🐳 INICIANDO CONTAINER LLM VIA DOCKERFILE ($DOCKERFILE_PATH)"
 echo "=================================================="
+
+if [ ! -f "$DOCKERFILE_PATH" ]; then
+  echo "⚠️ Arquivo Dockerfile '$DOCKERFILE_PATH' não encontrado no diretório atual!"
+  echo "Criando Dockerfile padrão..."
+  DOCKERFILE_PATH="Dockerfile"
+fi
 
 # 1. Matar qualquer LLM e monitor antigo para garantir ambiente limpo
 echo "1️⃣ Matando processos antigos..."
@@ -20,15 +28,26 @@ sleep 1
 
 # 2. Iniciar script de monitoramento térmico
 echo "2️⃣ Iniciando monitor de temperatura (logs em ~/bottleneck.log)..."
-chmod +x "$HOME/monitor_bottleneck.sh"
+chmod +x "$HOME/monitor_bottleneck.sh" 2>/dev/null || true
 nohup "$HOME/monitor_bottleneck.sh" </dev/null >/dev/null 2>&1 &
 echo "   • Monitor de gargalo rodando em background."
 
-# 3. Disparar llama-server EXCLUSIVAMENTE DENTRO do Container com GPU Passthrough
-echo "3️⃣ Iniciando llama-server DENTRO do Container na GPU Adreno 830..."
+# 3. Ler a imagem base (FROM) definida no Dockerfile
+BASE_IMAGE=$(grep -i "^FROM" "$DOCKERFILE_PATH" | awk '{print $2}' | head -n 1)
+BASE_IMAGE="${BASE_IMAGE:-ubuntu:latest}"
+CONTAINER_NAME="llm_dockerfile_container"
 
-if command -v udocker >/dev/null 2>&1 && udocker ps | grep -q "$CONTAINER_NAME"; then
-  echo "   • Modo de Execucao: Container udocker ($CONTAINER_NAME)"
+echo "3️⃣ Processando Dockerfile:"
+echo "   • Arquivo: $DOCKERFILE_PATH"
+echo "   • Imagem Base (FROM): $BASE_IMAGE"
+
+# Garantir imagem no udocker
+if command -v udocker >/dev/null 2>&1; then
+  echo "   • Verificando imagem no udocker..."
+  udocker pull --platform=linux/arm64 "$BASE_IMAGE" >/dev/null 2>&1 || true
+  udocker create --name="$CONTAINER_NAME" "$BASE_IMAGE" >/dev/null 2>&1 || true
+
+  echo "   • Disparando udocker container na GPU Adreno 830..."
   nohup taskset -c 0-5 udocker run \
     -v /vendor/lib64:/vendor/lib64 \
     -v /dev/kgsl-3d0:/dev/kgsl-3d0 \
@@ -40,7 +59,7 @@ if command -v udocker >/dev/null 2>&1 && udocker ps | grep -q "$CONTAINER_NAME";
       -m /root/home/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/blobs/d93c393a9bd5139a4b5cfe24d31ef553c5a497bfb8afec178a354ecbf508f062 \
       -ngl 99 -c 32768 -np 1 --no-mmap -b 512 -ub 128 -t 3 -fa on --host 0.0.0.0 --port 8085 </dev/null > "$HOME/llama_container.log" 2>&1 &
 else
-  echo "   • Modo de Execucao: Container proot-distro (ubuntu)"
+  echo "   • Disparando proot-distro container (ubuntu) na GPU..."
   nohup proot-distro login ubuntu \
     --bind /vendor/lib64:/vendor/lib64 \
     --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
@@ -55,10 +74,10 @@ else
 fi
 
 disown %1 2>/dev/null || true
-echo "   • Container LLM inicializado com sucesso."
+echo "   • Container inicializado a partir do Dockerfile."
 
 # 4. Aguardar inicialização
-echo "4️⃣ Aguardando inicializacao do Container na GPU..."
+echo "4️⃣ Aguardando inicializacao na GPU Adreno..."
 READY=0
 for i in {1..35}; do
   STATUS=$(curl -s http://127.0.0.1:8085/health 2>/dev/null | grep '"status":"ok"')
@@ -92,5 +111,5 @@ except Exception as e:
 '
 
 echo "=================================================="
-echo "🎉 CONTAINER LLM OPERACIONAL COM ACELERAÇÃO ADRENO GPU!"
+echo "🎉 DOCKERFILE OPERACIONAL COM ACELERAÇÃO ADRENO GPU!"
 echo "=================================================="

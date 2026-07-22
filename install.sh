@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# llama-android-container: Installation Script (100% Container Mode)
+# llama-android-container: Installation Script (Dockerfile-driven Container)
 # Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 GPU on Termux
 # ==============================================================================
 
@@ -26,24 +26,25 @@ echo "3️⃣ Configurando driver OpenCL da Adreno GPU (/vendor/lib64/libOpenCL_
 mkdir -p /data/data/com.termux/files/usr/etc/OpenCL/vendors
 echo "/vendor/lib64/libOpenCL_adreno.so" > /data/data/com.termux/files/usr/etc/OpenCL/vendors/qualcomm.icd
 
-# 4. Baixar imagem base Linux ARM64 para o udocker
+# 4. Baixar imagem base Linux ARM64 no udocker a partir da instrucao FROM do Dockerfile
 echo "4️⃣ Baixando imagem base Linux ARM64 no udocker..."
 udocker pull --platform=linux/arm64 ubuntu:latest || true
-udocker create --name=llm_agent ubuntu:latest || true
+udocker create --name=llm_dockerfile_container ubuntu:latest || true
 
 # 5. Instalar ambiente proot-distro Ubuntu
 echo "5️⃣ Garantindo ambiente proot-distro Ubuntu..."
 proot-distro install ubuntu || true
 
 # 6. Copiar scripts para o diretório $HOME e dar permissão de execução
-echo "6️⃣ Copiando scripts do Container para $HOME..."
+echo "6️⃣ Copiando scripts para $HOME..."
 cp -f get_thermal.py "$HOME/" 2>/dev/null || true
 cp -f monitor_bottleneck.sh "$HOME/" 2>/dev/null || true
 cp -f start.sh "$HOME/" 2>/dev/null || true
+cp -f Dockerfile "$HOME/" 2>/dev/null || true
 
 chmod +x "$HOME/monitor_bottleneck.sh" "$HOME/start.sh"
 
 echo "=================================================="
 echo "✅ INSTALAÇÃO DO CONTAINER CONCLUÍDA COM SUCESSO!"
-echo "Para iniciar o servidor no Container:  ./start.sh"
+echo "Para iniciar o servidor a partir do Dockerfile:  ./start.sh Dockerfile"
 echo "=================================================="
