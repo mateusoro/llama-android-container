@@ -5,7 +5,7 @@
 # Optimized for Qualcomm Snapdragon 8 Elite / Adreno 830 (100% Container Mode)
 # ==============================================================================
 
-CONTAINER_NAME="${1:-ubuntu}"
+CONTAINER_NAME="${1:-llm_agent}"
 
 echo "=================================================="
 echo "🐳 INICIANDO SERVIDOR LLM NO CONTAINER ($CONTAINER_NAME + ADRENO 830 GPU)"
@@ -40,8 +40,8 @@ if command -v udocker >/dev/null 2>&1 && udocker ps | grep -q "$CONTAINER_NAME";
       -m /root/home/.cache/huggingface/hub/models--InternScience--Agents-A1-4B-Q4_K_M-GGUF/blobs/d93c393a9bd5139a4b5cfe24d31ef553c5a497bfb8afec178a354ecbf508f062 \
       -ngl 99 -c 32768 -np 1 --no-mmap -b 512 -ub 128 -t 3 -fa on --host 0.0.0.0 --port 8085 </dev/null > "$HOME/llama_container.log" 2>&1 &
 else
-  echo "   • Modo de Execucao: Container proot-distro ($CONTAINER_NAME)"
-  nohup proot-distro login "$CONTAINER_NAME" \
+  echo "   • Modo de Execucao: Container proot-distro (ubuntu)"
+  nohup proot-distro login ubuntu \
     --bind /vendor/lib64:/vendor/lib64 \
     --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
     --bind /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
