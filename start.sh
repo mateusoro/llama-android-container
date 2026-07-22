@@ -1,9 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# Master Startup Script: Dockerfile-driven Container LLM Server
-# Reads and executes ALL Dockerfile environment variables & parameters integrally!
-# Supports both udocker and proot-distro container engines with GPU passthrough.
+# llama-android-container: Master Dockerfile Startup Script
+# Executes Dockerfile specifications in Rootless Container Environment with GPU Passthrough
 # Usage: ./start.sh [path/to/Dockerfile]
 # Example: ./start.sh Dockerfile
 # ==============================================================================
@@ -11,11 +10,11 @@
 DOCKERFILE_PATH="${1:-Dockerfile}"
 
 echo "=================================================="
-echo "🐳 EXECUTANDO DOCKERFILE INTEGRALMENTE ($DOCKERFILE_PATH)"
+echo "🐳 EXECUTANDO CONTAINER VIA DOCKERFILE ($DOCKERFILE_PATH)"
 echo "=================================================="
 
 if [ ! -f "$DOCKERFILE_PATH" ]; then
-  echo "⚠️ Arquivo Dockerfile '$DOCKERFILE_PATH' não encontrado!"
+  echo "⚠️ Arquivo Dockerfile '$DOCKERFILE_PATH' não encontrado no diretório atual!"
   DOCKERFILE_PATH="Dockerfile"
 fi
 
@@ -76,8 +75,8 @@ echo "   • Modelo Encontrado/Pronto: $MODEL_PATH"
 
 CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
 
-# 5. Executar o Container no ambiente com aceleração Adreno GPU
-echo "5️⃣ Executando Container na GPU Adreno 830..."
+# 5. Executar o Container com passthrough de GPU Adreno 830 e freio térmico (taskset -c 0-5)
+echo "5️⃣ Executando Container na GPU Adreno 830 (udocker / container engine)..."
 nohup proot-distro login ubuntu \
   --bind /vendor/lib64:/vendor/lib64 \
   --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
