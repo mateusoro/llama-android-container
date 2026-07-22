@@ -23,3 +23,11 @@ ENV HOST=0.0.0.0
 
 # 4. Build-time setup inside container
 RUN apt-get update && apt-get install -y curl ca-certificates
+
+# 5. Runtime Execution Engine (Triggered by proot-distro run)
+CMD sh -c 'export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:$PATH && \
+    MODEL_PATH=$(find /root/home/.cache/huggingface/hub -name "*.gguf" 2>/dev/null | head -n 1) && \
+    exec taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server \
+      -m "$MODEL_PATH" -ngl $GPU_LAYERS -c $CONTEXT -np 1 --no-mmap \
+      -b $BATCH -ub $UBATCH -t $THREADS -fa $FLASH_ATTN \
+      --host $HOST --port $PORT'

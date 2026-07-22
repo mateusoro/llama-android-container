@@ -40,18 +40,13 @@ proot-distro build -f "$DOCKERFILE_PATH" -t "$APP_NAME:latest" --install-as "$AP
 echo "   • Imagem OCI instalada com sucesso como container '$APP_NAME'."
 
 # 4. Executar o Container Construído com Passthrough de GPU Adreno 830
-echo "4️⃣ Executando Container '$APP_NAME' na GPU Adreno 830..."
-nohup proot-distro login "$APP_NAME" \
+echo "4️⃣ Executando Container '$APP_NAME' na GPU Adreno 830 (via CMD do Dockerfile)..."
+nohup proot-distro run "$APP_NAME" \
   --bind /vendor/lib64:/vendor/lib64 \
   --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
   --bind /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
   --bind /data/data/com.termux/files/home:/root/home \
-  -- bash -c "
-export LD_LIBRARY_PATH=/vendor/lib64:\$LD_LIBRARY_PATH
-export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:\$PATH
-MODEL_PATH=\$(find /root/home/.cache/huggingface/hub -name '*.gguf' 2>/dev/null | head -n 1)
-taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server -m \"\$MODEL_PATH\" -ngl 99 -c 32768 -np 1 --no-mmap -b 512 -ub 128 -t 3 -fa on --host 0.0.0.0 --port 8085
-" </dev/null > "$HOME/llama_container.log" 2>&1 &
+  </dev/null > "$HOME/llama_container.log" 2>&1 &
 
 disown %1 2>/dev/null || true
 echo "   • Container '$APP_NAME' construído e inicializado."
