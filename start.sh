@@ -1,20 +1,21 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# Master Startup Script: Dockerfile-driven Container LLM Server
-# Container Engine: udocker run (Direct udocker CLI execution with GPU Passthrough)
+# Master Startup Script: Native Dockerfile Build & Execution Engine for Termux
+# Powered by `proot-distro build` (Native OCI Dockerfile Compiler)
 # Usage: ./start.sh [path/to/Dockerfile]
 # Example: ./start.sh Dockerfile
 # ==============================================================================
 
 DOCKERFILE_PATH="${1:-Dockerfile}"
+APP_NAME="llama_app"
 
 echo "=================================================="
-echo "🐳 EXECUTANDO VIA UDOCKER RUN ($DOCKERFILE_PATH)"
+echo "🐳 CONSTRUINDO E EXECUTANDO DOCKERFILE VIA PROOT-DISTRO BUILD ($DOCKERFILE_PATH)"
 echo "=================================================="
 
 if [ ! -f "$DOCKERFILE_PATH" ]; then
-  echo "⚠️ Arquivo Dockerfile '$DOCKERFILE_PATH' não encontrado no diretório atual!"
+  echo "⚠️ Arquivo Dockerfile '$DOCKERFILE_PATH' não encontrado!"
   DOCKERFILE_PATH="Dockerfile"
 fi
 
@@ -22,7 +23,7 @@ fi
 echo "1️⃣ Matando processos antigos..."
 pkill -9 -f llama-server 2>/dev/null || true
 pkill -9 -f monitor_bottleneck 2>/dev/null || true
-pkill -9 -f udocker 2>/dev/null || true
+pkill -9 -f proot-distro 2>/dev/null || true
 sleep 1
 
 # 2. Iniciar script de monitoramento térmico
@@ -31,85 +32,35 @@ chmod +x "$HOME/monitor_bottleneck.sh" 2>/dev/null || true
 nohup "$HOME/monitor_bottleneck.sh" </dev/null >/dev/null 2>&1 &
 echo "   • Monitor de gargalo rodando em background."
 
-# 3. Ler INTEGRALMENTE todas as variáveis de ambiente declaradas no Dockerfile
-BASE_IMAGE=$(grep -i "^FROM" "$DOCKERFILE_PATH" 2>/dev/null | awk '{print $2}' | head -n 1)
-REPO_ID=$(grep -i "^ENV REPO_ID=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-THREADS=$(grep -i "^ENV THREADS=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-UBATCH=$(grep -i "^ENV UBATCH=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-BATCH=$(grep -i "^ENV BATCH=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-CONTEXT=$(grep -i "^ENV CONTEXT=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-GPU_LAYERS=$(grep -i "^ENV GPU_LAYERS=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-FLASH_ATTN=$(grep -i "^ENV FLASH_ATTN=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-PORT=$(grep -i "^ENV PORT=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
-HOST=$(grep -i "^ENV HOST=" "$DOCKERFILE_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d ' "')
+# 3. Construir a Imagem OCI nativamente a partir do Dockerfile usando `proot-distro build`
+echo "3️⃣ Construindo imagem OCI a partir do Dockerfile (proot-distro build)..."
+proot-distro remove "$APP_NAME" 2>/dev/null || true
+proot-distro build -f "$DOCKERFILE_PATH" -t "$APP_NAME:latest" --install-as "$APP_NAME" .
 
-# Aplicar valores padrão se alguma variável não estiver no Dockerfile
-BASE_IMAGE="${BASE_IMAGE:-ubuntu:latest}"
-REPO_ID="${REPO_ID:-InternScience/Agents-A1-4B-Q4_K_M-GGUF}"
-THREADS="${THREADS:-3}"
-UBATCH="${UBATCH:-128}"
-BATCH="${BATCH:-512}"
-CONTEXT="${CONTEXT:-32768}"
-GPU_LAYERS="${GPU_LAYERS:-99}"
-FLASH_ATTN="${FLASH_ATTN:-on}"
-PORT="${PORT:-8085}"
-HOST="${HOST:-0.0.0.0}"
+echo "   • Imagem OCI instalada com sucesso como container '$APP_NAME'."
 
-echo "3️⃣ Parâmetros lidos INTEGRALMENTE do Dockerfile:"
-echo "   • Arquivo: $DOCKERFILE_PATH"
-echo "   • Imagem Base (FROM): $BASE_IMAGE"
-echo "   • Repo ID (HuggingFace): $REPO_ID"
-echo "   • Contexto: $CONTEXT | Threads: $THREADS | Micro-batch: $UBATCH"
-echo "   • Camadas GPU: $GPU_LAYERS | FlashAttention: $FLASH_ATTN | Porta: $PORT"
-
-# 4. Checar/Baixar modelo de pesos via CLI oficial HuggingFace 'hf'
-echo "4️⃣ Checando/Baixando modelo no cache HuggingFace..."
-HF_SNAPSHOT_PATH=$(hf download "$REPO_ID" --include "*.gguf" 2>/dev/null | grep -o 'path=.*' | cut -d'=' -f2)
-MODEL_PATH=$(find "${HF_SNAPSHOT_PATH:-$HOME/.cache/huggingface/hub}" -name "*.gguf" 2>/dev/null | head -n 1)
-
-if [ -z "$MODEL_PATH" ] || [ ! -f "$MODEL_PATH" ]; then
-  MODEL_PATH=$(find "$HOME/.cache/huggingface/hub" -name "*.gguf" 2>/dev/null | head -n 1)
-fi
-
-echo "   • Modelo Encontrado/Pronto: $MODEL_PATH"
-
-CONTAINER_NAME="llm_dockerfile_container"
-CONTAINER_MODEL_PATH=$(echo "$MODEL_PATH" | sed "s|$HOME|/root/home|g")
-
-# Garantir criação do container no udocker
-udocker pull --platform=linux/arm64 "$BASE_IMAGE" >/dev/null 2>&1 || true
-udocker create --name="$CONTAINER_NAME" "$BASE_IMAGE" >/dev/null 2>&1 || true
-
-# 5. Executar EXCLUSIVAMENTE o comando udocker run
-echo "5️⃣ Executando EXCLUSIVAMENTE o comando 'udocker run' na GPU Adreno 830..."
-nohup taskset -c 0-5 udocker run \
-  -v /vendor/lib64:/vendor/lib64 \
-  -v /dev/kgsl-3d0:/dev/kgsl-3d0 \
-  -v /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
-  -v /data/data/com.termux/files/home:/root/home \
-  -e LD_LIBRARY_PATH=/vendor/lib64 \
-  "$CONTAINER_NAME" \
-  /data/data/com.termux/files/usr/bin/llama-server \
-    -m "$CONTAINER_MODEL_PATH" \
-    -ngl $GPU_LAYERS \
-    -c $CONTEXT \
-    -np 1 \
-    --no-mmap \
-    -b $BATCH \
-    -ub $UBATCH \
-    -t $THREADS \
-    -fa $FLASH_ATTN \
-    --host $HOST \
-    --port $PORT </dev/null > "$HOME/llama_container.log" 2>&1 &
+# 4. Executar o Container Construído com Passthrough de GPU Adreno 830
+echo "4️⃣ Executando Container '$APP_NAME' na GPU Adreno 830..."
+nohup proot-distro login "$APP_NAME" \
+  --bind /vendor/lib64:/vendor/lib64 \
+  --bind /dev/kgsl-3d0:/dev/kgsl-3d0 \
+  --bind /data/data/com.termux/files/usr/etc/OpenCL/vendors:/etc/OpenCL/vendors \
+  --bind /data/data/com.termux/files/home:/root/home \
+  -- bash -c "
+export LD_LIBRARY_PATH=/vendor/lib64:\$LD_LIBRARY_PATH
+export PATH=/root/home/.local/bin:/data/data/com.termux/files/usr/bin:\$PATH
+MODEL_PATH=\$(find /root/home/.cache/huggingface/hub -name '*.gguf' 2>/dev/null | head -n 1)
+taskset -c 0-5 /data/data/com.termux/files/usr/bin/llama-server -m \"\$MODEL_PATH\" -ngl 99 -c 32768 -np 1 --no-mmap -b 512 -ub 128 -t 3 -fa on --host 0.0.0.0 --port 8085
+" </dev/null > "$HOME/llama_container.log" 2>&1 &
 
 disown %1 2>/dev/null || true
-echo "   • Comando 'udocker run' disparado com sucesso."
+echo "   • Container '$APP_NAME' construído e inicializado."
 
-# 6. Aguardar inicialização
-echo "6️⃣ Aguardando inicializacao da GPU no Container udocker..."
+# 5. Aguardar inicialização
+echo "5️⃣ Aguardando inicializacao da GPU no Container..."
 READY=0
 for i in {1..35}; do
-  STATUS=$(curl -s "http://127.0.0.1:${PORT}/health" 2>/dev/null | grep '"status":"ok"')
+  STATUS=$(curl -s "http://127.0.0.1:8085/health" 2>/dev/null | grep '"status":"ok"')
   if [ -n "$STATUS" ]; then
     READY=1
     break
@@ -118,20 +69,20 @@ for i in {1..35}; do
 done
 
 if [ $READY -eq 1 ]; then
-  echo "✅ Servidor udocker online e pronto em http://localhost:${PORT}!"
+  echo "✅ Servidor do Container online e pronto em http://localhost:8085!"
 else
   echo "⚠️ Servidor demorando a responder, aguardando mais 3 segundos..."
   sleep 3
 fi
 
-# 7. Warmup via CLI curl
-echo "7️⃣ Esquentando os motores do Container udocker..."
-curl -s -X POST "http://127.0.0.1:${PORT}/completion" \
+# 6. Warmup via CLI curl
+echo "6️⃣ Esquentando os motores do Container..."
+curl -s -X POST "http://127.0.0.1:8085/completion" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Diga um oi em 3 palavras", "n_predict": 10, "temperature": 0.7}' \
   | grep -o '"content":"[^"]*"' | head -n 1 || true
 
 echo ""
 echo "=================================================="
-echo "🎉 CONTAINER UDOCKER OPERACIONAL INTEGRALMENTE NA ADRENO GPU!"
+echo "🎉 DOCKERFILE CONSTRUÍDO E OPERACIONAL NA ADRENO GPU!"
 echo "=================================================="
