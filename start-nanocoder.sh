@@ -1,25 +1,27 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # ==============================================================================
-# llama-android-container: Startup Script
-# Downloads model (if needed) and launches llama-server with Adreno 830 GPU
-# Usage: ./start.sh [model_path.gguf]
+# llama-android-container: Start llama-server + nanocoder (local LLM)
+# Launches llama-server on Adreno 830 GPU, then opens nanocoder using it
+# Usage: ./start-nanocoder.sh [model_path.gguf]
 # ==============================================================================
 
 MODEL_CACHE="$HOME/.cache/llama-models"
 MODEL_FILE="Agents-A1-4B-Q4_K_M.gguf"
 MODEL_URL="https://huggingface.co/InternScience/Agents-A1-4B-Q4_K_M-GGUF/resolve/main/Agents-A1-4B-Q4_K_M.gguf"
 PORT=8085
+NANOCODER_CONFIG="$HOME/.config/nanocoder/agents.config.json"
 
 # Modelo custom via argumento
 if [ -n "$1" ] && [ -f "$1" ]; then
   MODEL_PATH="$1"
+  MODEL_FILE=$(basename "$1")
 else
   MODEL_PATH="$MODEL_CACHE/$MODEL_FILE"
 fi
 
 echo "=================================================="
-echo "🦙 llama-server — Adreno 830 OpenCL GPU"
+echo "🦙 llama-server + nanocoder — Adreno 830 GPU"
 echo "=================================================="
 
 # 1. Matar processos antigos
@@ -57,11 +59,8 @@ fi
 # 5. OpenCL Adreno 830
 export LD_LIBRARY_PATH="/vendor/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-# 6. Lançar com tweaks de performance
+# 6. Lançar llama-server
 echo "4️⃣ Iniciando llama-server (GPU Adreno 830)..."
-echo "   Modelo: $MODEL_PATH"
-echo "   Porta: $PORT"
-
 nohup taskset -c 0-5 llama-server \
   -m "$MODEL_PATH" \
   -ngl 99 \
@@ -81,7 +80,7 @@ disown $LLAMA_PID 2>/dev/null || true
 echo "   • PID: $LLAMA_PID"
 
 # 7. Health check
-echo "5️⃣ Aguardando inicialização..."
+echo "5️⃣ Aguardando llama-server..."
 READY=0
 for i in $(seq 1 60); do
   STATUS=$(curl -s "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -o '"status":"ok"')
@@ -92,26 +91,80 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
-if [ $READY -eq 1 ]; then
-  echo "✅ Online: http://localhost:$PORT"
-else
-  echo "⚠️ Não respondeu em 120s. Logs:"
-  echo "   cat ~/llama_server.log"
+if [ $READY -ne 1 ]; then
+  echo "❌ llama-server não respondeu. Logs: cat ~/llama_server.log"
+  exit 1
+fi
+echo "   ✅ llama-server online: http://localhost:$PORT"
+
+# 8. Verificar nanocoder
+if ! command -v nanocoder &>/dev/null; then
+  echo "❌ nanocoder não encontrado!"
+  echo "   Instale: npm install -g nanocoder"
   exit 1
 fi
 
-# 8. Warmup
-echo "6️⃣ Warmup..."
-curl -s -X POST "http://127.0.0.1:$PORT/completion" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Diga um oi em 3 palavras", "n_predict": 10, "temperature": 0.7}' \
-  | grep -o '"content":"[^"]*"' | head -n 1 || true
+# 9. Configurar provider local no nanocoder
+echo "6️⃣ Configurando nanocoder → llama-server local..."
+mkdir -p "$(dirname "$NANOCODER_CONFIG")"
 
+# Adicionar provider "local" se não existir
+if [ -f "$NANOCODER_CONFIG" ]; then
+  # Verificar se provider "local" já existe
+  if ! python3 -c "
+import json, sys
+with open('$NANOCODER_CONFIG') as f:
+    cfg = json.load(f)
+providers = cfg.get('nanocoder', {}).get('providers', [])
+sys.exit(0 if any(p.get('name') == 'local' for p in providers) else 1)
+" 2>/dev/null; then
+    python3 -c "
+import json
+with open('$NANOCODER_CONFIG') as f:
+    cfg = json.load(f)
+cfg.setdefault('nanocoder', {}).setdefault('providers', []).append({
+    'name': 'local',
+    'models': ['$MODEL_FILE'],
+    'baseUrl': 'http://localhost:$PORT/v1',
+    'apiKey': 'not-needed',
+    'timeout': 120000
+})
+with open('$NANOCODER_CONFIG', 'w') as f:
+    json.dump(cfg, f, indent=2)
+"
+    echo "   • Provider 'local' adicionado ao config"
+  else
+    echo "   • Provider 'local' já existe"
+  fi
+else
+  # Criar config do zero
+  cat > "$NANOCODER_CONFIG" << JSONEOF
+{
+  "nanocoder": {
+    "providers": [
+      {
+        "name": "local",
+        "models": ["$MODEL_FILE"],
+        "baseUrl": "http://localhost:$PORT/v1",
+        "apiKey": "not-needed",
+        "timeout": 120000
+      }
+    ]
+  }
+}
+JSONEOF
+  echo "   • Config criada com provider 'local'"
+fi
+
+# 10. Lançar nanocoder
 echo ""
 echo "=================================================="
-echo "🎉 OPERACIONAL — Adreno 830 GPU"
-echo "   API: http://localhost:$PORT"
+echo "🎉 Tudo pronto!"
+echo "   LLM: http://localhost:$PORT (Adreno 830 GPU)"
+echo "   Modelo: $MODEL_FILE"
 echo "   Logs: cat ~/llama_server.log"
-echo "   Térmico: tail -f ~/bottleneck.log"
 echo "   Parar: pkill llama-server"
 echo "=================================================="
+echo ""
+
+exec nanocoder --provider local --model "$MODEL_FILE" --context-max 32k
